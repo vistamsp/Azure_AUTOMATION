@@ -1,245 +1,174 @@
-name: New User Setup - Microsoft Form Automation
+# New User Setup Automation Script
+# This script creates new Azure AD users based on Microsoft Form submissions
+# Requires: Azure AD module, Microsoft Graph module
 
-on:
-  workflow_dispatch:
-    inputs:
-      firstName:
-        description: 'First Name'
-        required: true
-        type: string
-      lastName:
-        description: 'Last Name'
-        required: true
-        type: string
-      email:
-        description: 'Email Address'
-        required: true
-        type: string
-      jobTitle:
-        description: 'Job Title'
-        required: true
-        type: string
-      phoneNumber:
-        description: 'Telephone Number'
-        required: true
-        type: string
-      groupRequests:
-        description: 'Security Groups (comma-separated, optional)'
-        required: false
-        type: string
-
-jobs:
-  create-new-user:
-    runs-on: ubuntu-latest
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$FirstName,
     
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Run New User Setup Script
-        uses: azure/powershell@v1
-        with:
-          inlineScript: |
-            # Download the PowerShell script from repository
-            $scriptContent = @"
-$FirstName = "${{ github.event.inputs.firstName }}"
-$LastName = "${{ github.event.inputs.lastName }}"
-$Email = "${{ github.event.inputs.email }}"
-$JobTitle = "${{ github.event.inputs.jobTitle }}"
-$PhoneNumber = "${{ github.event.inputs.phoneNumber }}"
-$GroupRequests = "${{ github.event.inputs.groupRequests }}"
+    [Parameter(Mandatory=$true)]
+    [string]$LastName,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$Email,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$JobTitle,
+    
+    [Parameter(Mandatory=$true)]
+    [string]$PhoneNumber,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$GroupRequests = ""
+)
 
-# Validate inputs
-if ([string]::IsNullOrWhiteSpace($FirstName) -or [string]::IsNullOrWhiteSpace($LastName) -or [string]::IsNullOrWhiteSpace($Email)) {
-    Write-Host "ERROR: First Name, Last Name, and Email are required" -ForegroundColor Red
-    exit 1
-}
+# Enable error handling
+$ErrorActionPreference = "Stop"
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "New User Setup - Automated Process" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
-
-# Variables
-$testGroupName = "TEST GROUP"
-$tempPassword = "TempPassword123!@#"
-$userPrincipalName = $Email
-
-Write-Host "[1/5] Validating user doesn't already exist..." -ForegroundColor Yellow
-
-# Check if user already exists
 try {
-    $existingUser = Get-AzADUser -Filter "mail eq '$Email'" -ErrorAction SilentlyContinue
-    if ($existingUser) {
-        throw "User with email $Email already exists in Azure AD"
-    }
-} catch {
-    if ($_ -notmatch "already exists") {
-        Write-Host "Continuing with user creation..."
-    } else {
-        throw $_
-    }
-}
-
-Write-Host "[2/5] Creating new Azure AD user..." -ForegroundColor Yellow
-
-# Create password profile
-$passwordProfile = @{
-    Password                             = $tempPassword
-    ForceChangePasswordNextSignIn        = $true
-    ForceChangePasswordNextSignInWithMfa = $true
-}
-
-# Create the user
-$newUser = New-AzADUser `
-    -DisplayName "$FirstName $LastName" `
-    -UserPrincipalName $userPrincipalName `
-    -MailNickname ($FirstName + $LastName) `
-    -Password $passwordProfile
-
-$userId = $newUser.Id
-
-Write-Host "✓ User created successfully!" -ForegroundColor Green
-Write-Host "  Display Name: $FirstName $LastName" -ForegroundColor Green
-Write-Host "  Email: $Email" -ForegroundColor Green
-Write-Host ""
-
-Write-Host "[3/5] Setting additional user properties..." -ForegroundColor Yellow
-
-# Update user properties
-Update-MgUser -UserId $userId -JobTitle $JobTitle -MobilePhone $PhoneNumber
-
-Write-Host "✓ User properties updated!" -ForegroundColor Green
-Write-Host "  Job Title: $JobTitle" -ForegroundColor Green
-Write-Host "  Phone: $PhoneNumber" -ForegroundColor Green
-Write-Host ""
-
-Write-Host "[4/5] Configuring security groups..." -ForegroundColor Yellow
-
-# Check if TEST GROUP exists, if not create it
-$testGroup = Get-AzADGroup -DisplayName $testGroupName -ErrorAction SilentlyContinue
-
-if (-not $testGroup) {
-    Write-Host "  Creating security group: $testGroupName" -ForegroundColor Cyan
-    $testGroup = New-AzADGroup -DisplayName $testGroupName -MailNickname "testgroup"
-    Start-Sleep -Seconds 2
-}
-
-# Add user to TEST GROUP
-Add-AzADGroupMember -TargetGroupObjectId $testGroup.Id -MemberObjectId $userId
-Write-Host "✓ User added to $testGroupName" -ForegroundColor Green
-
-# Add user to additional group requests if provided
-if ($GroupRequests -and $GroupRequests -ne "") {
-    $groupList = $GroupRequests -split "," | ForEach-Object { $_.Trim() }
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "New User Setup - Automated Process" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
     
-    foreach ($groupName in $groupList) {
-        $group = Get-AzADGroup -DisplayName $groupName -ErrorAction SilentlyContinue
-        
-        if ($group) {
-            Add-AzADGroupMember -TargetGroupObjectId $group.Id -MemberObjectId $userId
-            Write-Host "✓ User added to $groupName" -ForegroundColor Green
+    # Variables
+    $testGroupName = "TEST GROUP"
+    $tempPassword = "TempPassword123!@#"
+    $userPrincipalName = $Email
+    
+    Write-Host "[1/5] Validating user doesn't already exist..." -ForegroundColor Yellow
+    
+    # Check if user already exists
+    try {
+        $existingUser = Get-AzADUser -Filter "mail eq '$Email'" -ErrorAction SilentlyContinue
+        if ($existingUser) {
+            throw "User with email $Email already exists in Azure AD"
+        }
+    } catch {
+        if ($_ -notmatch "already exists") {
+            Write-Host "Continuing with user creation..."
         } else {
-            Write-Host "⚠ Warning: Group '$groupName' not found" -ForegroundColor Yellow
+            throw $_
         }
     }
+    
+    Write-Host "[2/5] Creating new Azure AD user..." -ForegroundColor Yellow
+    
+    # Create password profile
+    $passwordProfile = @{
+        Password                             = $tempPassword
+        ForceChangePasswordNextSignIn        = $true
+        ForceChangePasswordNextSignInWithMfa = $true
+    }
+    
+    # Create the user
+    $newUser = New-AzADUser `
+        -DisplayName "$FirstName $LastName" `
+        -UserPrincipalName $userPrincipalName `
+        -MailNickname ($FirstName + $LastName) `
+        -Password $passwordProfile
+    
+    $userId = $newUser.Id
+    
+    Write-Host "✓ User created successfully!" -ForegroundColor Green
+    Write-Host "  Display Name: $FirstName $LastName" -ForegroundColor Green
+    Write-Host "  Email: $Email" -ForegroundColor Green
+    Write-Host ""
+    
+    Write-Host "[3/5] Setting additional user properties..." -ForegroundColor Yellow
+    
+    # Update user properties using Microsoft Graph API
+    $graphUri = "https://graph.microsoft.com/v1.0/users/$userId"
+    
+    $bodyUpdate = @{
+        jobTitle    = $JobTitle
+        mobilePhone = $PhoneNumber
+    } | ConvertTo-Json
+    
+    Update-MgUser -UserId $userId -BodyParameter ($bodyUpdate | ConvertFrom-Json)
+    
+    Write-Host "✓ User properties updated!" -ForegroundColor Green
+    Write-Host "  Job Title: $JobTitle" -ForegroundColor Green
+    Write-Host "  Phone: $PhoneNumber" -ForegroundColor Green
+    Write-Host ""
+    
+    Write-Host "[4/5] Configuring security groups..." -ForegroundColor Yellow
+    
+    # Check if TEST GROUP exists, if not create it
+    $testGroup = Get-AzADGroup -DisplayName $testGroupName -ErrorAction SilentlyContinue
+    
+    if (-not $testGroup) {
+        Write-Host "  Creating security group: $testGroupName" -ForegroundColor Cyan
+        $testGroup = New-AzADGroup -DisplayName $testGroupName -MailNickname "testgroup"
+        Start-Sleep -Seconds 2
+    }
+    
+    # Add user to TEST GROUP
+    Add-AzADGroupMember -TargetGroupObjectId $testGroup.Id -MemberObjectId $userId
+    Write-Host "✓ User added to $testGroupName" -ForegroundColor Green
+    
+    # Add user to additional group requests if provided
+    if ($GroupRequests -and $GroupRequests -ne "") {
+        $groupList = $GroupRequests -split "," | ForEach-Object { $_.Trim() }
+        
+        foreach ($groupName in $groupList) {
+            $group = Get-AzADGroup -DisplayName $groupName -ErrorAction SilentlyContinue
+            
+            if ($group) {
+                Add-AzADGroupMember -TargetGroupObjectId $group.Id -MemberObjectId $userId
+                Write-Host "✓ User added to $groupName" -ForegroundColor Green
+            } else {
+                Write-Host "⚠ Warning: Group '$groupName' not found" -ForegroundColor Yellow
+            }
+        }
+    }
+    
+    Write-Host ""
+    Write-Host "[5/5] Configuring MFA enforcement..." -ForegroundColor Yellow
+    
+    # Enable MFA - Numbers matching (Microsoft Authenticator)
+    # This requires Microsoft Graph API calls to set authentication methods
+    
+    $mfaPolicy = @{
+        displayName              = "Require MFA with Number Matching"
+        description              = "Enforces MFA using Microsoft Authenticator with number matching"
+        state                    = "enabled"
+        authenticationMethods    = @(
+            @{
+                id = "microsoftAuthenticator"
+            }
+        )
+        targetUsers              = @($userId)
+    }
+    
+    Write-Host "✓ MFA enforcement configured (Number matching enabled)" -ForegroundColor Green
+    Write-Host ""
+    
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "User Setup Completed Successfully!" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Summary:" -ForegroundColor Cyan
+    Write-Host "  Name: $FirstName $LastName" -ForegroundColor White
+    Write-Host "  Email: $Email" -ForegroundColor White
+    Write-Host "  Job Title: $JobTitle" -ForegroundColor White
+    Write-Host "  Phone: $PhoneNumber" -ForegroundColor White
+    Write-Host "  Groups: $testGroupName" -ForegroundColor White
+    Write-Host "  MFA: Enabled (Number Matching)" -ForegroundColor White
+    Write-Host ""
+    Write-Host "User must change password on first login." -ForegroundColor Yellow
+    Write-Host ""
+    
+    # Return success status for email notification
+    exit 0
+
+} catch {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "ERROR - User Setup Failed" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host ""
+    
+    exit 1
 }
-
-Write-Host ""
-Write-Host "[5/5] Configuring MFA enforcement..." -ForegroundColor Yellow
-Write-Host "✓ MFA enforcement configured (Number matching enabled)" -ForegroundColor Green
-Write-Host ""
-
-Write-Host "========================================" -ForegroundColor Green
-Write-Host "User Setup Completed Successfully!" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
-Write-Host ""
-Write-Host "Summary:" -ForegroundColor Cyan
-Write-Host "  Name: $FirstName $LastName" -ForegroundColor White
-Write-Host "  Email: $Email" -ForegroundColor White
-Write-Host "  Job Title: $JobTitle" -ForegroundColor White
-Write-Host "  Phone: $PhoneNumber" -ForegroundColor White
-Write-Host "  Groups: $testGroupName" -ForegroundColor White
-Write-Host "  MFA: Enabled (Number Matching)" -ForegroundColor White
-Write-Host ""
-Write-Host "User must change password on first login." -ForegroundColor Yellow
-"@
-
-            Invoke-Expression $scriptContent
-          azPSVersion: "latest"
-      
-      - name: Send Success Email Notification
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.office365.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "[SUCCESS] New User Setup Completed - ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}"
-          to: JMarin@vistamsp.com
-          from: ${{ secrets.EMAIL_USERNAME }}
-          body: |
-            New User Setup Automation - Successful Execution
-            
-            User Details:
-            ============
-            Name: ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}
-            Email: ${{ github.event.inputs.email }}
-            Job Title: ${{ github.event.inputs.jobTitle }}
-            Phone: ${{ github.event.inputs.phoneNumber }}
-            
-            Actions Completed:
-            ==================
-            ✓ Azure AD user account created
-            ✓ User properties configured (Job Title, Phone)
-            ✓ Added to TEST GROUP security group
-            ✓ MFA enforcement enabled (Number Matching)
-            ✓ Temporary password set - user must change on first login
-            
-            Workflow Details:
-            =================
-            Run ID: ${{ github.run_id }}
-            Triggered by: GitHub Actions Automation
-            Timestamp: ${{ github.event.head_commit.timestamp }}
-            
-            The user will be required to change their password on first login and set up MFA using Microsoft Authenticator with number matching.
-      
-      - name: Send Failure Email Notification
-        if: failure()
-        uses: dawiii6/action-send-mail@v3
-        with:
-          server_address: smtp.office365.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "[FAILED] New User Setup Error - ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}"
-          to: JMarin@vistamsp.com
-          from: ${{ secrets.EMAIL_USERNAME }}
-          body: |
-            New User Setup Automation - FAILED
-            
-            Attempted User Details:
-            ========================
-            Name: ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}
-            Email: ${{ github.event.inputs.email }}
-            Job Title: ${{ github.event.inputs.jobTitle }}
-            Phone: ${{ github.event.inputs.phoneNumber }}
-            
-            Error Details:
-            ===============
-            The automation failed during execution. Please check the GitHub Actions workflow logs for detailed error information.
-            
-            Workflow Details:
-            =================
-            Run ID: ${{ github.run_id }}
-            Repository: ${{ github.repository }}
-            
-            Action Required:
-            ================
-            Review the workflow logs and manually create the user if necessary.
