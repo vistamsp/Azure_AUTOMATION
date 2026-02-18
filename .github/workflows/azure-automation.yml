@@ -52,48 +52,31 @@ jobs:
             $PhoneNumber = "${{ github.event.inputs.phoneNumber }}"
             $GroupRequests = "${{ github.event.inputs.groupRequests }}"
 
-            # Validate inputs
-            if ([string]::IsNullOrWhiteSpace($FirstName) -or [string]::IsNullOrWhiteSpace($LastName) -or [string]::IsNullOrWhiteSpace($Email)) {
-                Write-Host "ERROR: First Name, Last Name, and Email are required" -ForegroundColor Red
-                exit 1
-            }
-
             Write-Host "========================================" -ForegroundColor Cyan
             Write-Host "New User Setup - Automated Process" -ForegroundColor Cyan
             Write-Host "========================================" -ForegroundColor Cyan
             Write-Host ""
 
-            # Variables
             $testGroupName = "TEST GROUP"
             $tempPassword = "TempPassword123!@#"
             $userPrincipalName = $Email
 
             Write-Host "[1/5] Validating user doesn't already exist..." -ForegroundColor Yellow
 
-            # Check if user already exists
-            try {
-                $existingUser = Get-AzADUser -Filter "mail eq '$Email'" -ErrorAction SilentlyContinue
-                if ($existingUser) {
-                    throw "User with email $Email already exists in Azure AD"
-                }
-            } catch {
-                if ($_ -notmatch "already exists") {
-                    Write-Host "Continuing with user creation..."
-                } else {
-                    throw $_
-                }
+            $existingUser = Get-AzADUser -Filter "mail eq '$Email'" -ErrorAction SilentlyContinue
+            if ($existingUser) {
+                Write-Host "ERROR: User with email $Email already exists" -ForegroundColor Red
+                exit 1
             }
 
             Write-Host "[2/5] Creating new Azure AD user..." -ForegroundColor Yellow
 
-            # Create password profile
             $passwordProfile = @{
                 Password                             = $tempPassword
                 ForceChangePasswordNextSignIn        = $true
                 ForceChangePasswordNextSignInWithMfa = $true
             }
 
-            # Create the user
             $newUser = New-AzADUser `
                 -DisplayName "$FirstName $LastName" `
                 -UserPrincipalName $userPrincipalName `
@@ -109,7 +92,6 @@ jobs:
 
             Write-Host "[3/5] Setting additional user properties..." -ForegroundColor Yellow
 
-            # Update user properties
             Update-MgUser -UserId $userId -JobTitle $JobTitle -MobilePhone $PhoneNumber
 
             Write-Host "✓ User properties updated!" -ForegroundColor Green
@@ -119,7 +101,6 @@ jobs:
 
             Write-Host "[4/5] Configuring security groups..." -ForegroundColor Yellow
 
-            # Check if TEST GROUP exists, if not create it
             $testGroup = Get-AzADGroup -DisplayName $testGroupName -ErrorAction SilentlyContinue
 
             if (-not $testGroup) {
@@ -128,11 +109,9 @@ jobs:
                 Start-Sleep -Seconds 2
             }
 
-            # Add user to TEST GROUP
             Add-AzADGroupMember -TargetGroupObjectId $testGroup.Id -MemberObjectId $userId
             Write-Host "✓ User added to $testGroupName" -ForegroundColor Green
 
-            # Add user to additional group requests if provided
             if ($GroupRequests -and $GroupRequests -ne "") {
                 $groupList = $GroupRequests -split "," | ForEach-Object { $_.Trim() }
                 
@@ -164,11 +143,36 @@ jobs:
             Write-Host "  Phone: $PhoneNumber" -ForegroundColor White
             Write-Host "  Groups: $testGroupName" -ForegroundColor White
             Write-Host "  MFA: Enabled (Number Matching)" -ForegroundColor White
-            Write-Host ""
-            Write-Host "User must change password on first login." -ForegroundColor Yellow
           azPSVersion: "latest"
       
-- name: Send Failure Email Notification
+      - name: Send Success Email
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "[SUCCESS] New User Setup - ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}"
+          to: JMarin@vistamsp.com
+          from: ${{ secrets.EMAIL_USERNAME }}
+          body: |
+            New User Setup Automation - SUCCESS
+
+            User: ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}
+            Email: ${{ github.event.inputs.email }}
+            Job Title: ${{ github.event.inputs.jobTitle }}
+            Phone: ${{ github.event.inputs.phoneNumber }}
+
+            Actions Completed:
+            - Azure AD user created
+            - User properties configured
+            - Added to TEST GROUP
+            - MFA enabled with number matching
+
+            User must change password on first login.
+      
+      - name: Send Failure Email
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
@@ -176,28 +180,13 @@ jobs:
           server_port: 587
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "[FAILED] New User Setup Error - ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}"
+          subject: "[FAILED] New User Setup - ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}"
           to: JMarin@vistamsp.com
-          from: "Azure Automation <${{ secrets.EMAIL_USERNAME }}>"
+          from: ${{ secrets.EMAIL_USERNAME }}
           body: |
             New User Setup Automation - FAILED
-            
-            Attempted User Details:
-            ========================
-            Name: ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}
+
+            User: ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}
             Email: ${{ github.event.inputs.email }}
-            Job Title: ${{ github.event.inputs.jobTitle }}
-            Phone: ${{ github.event.inputs.phoneNumber }}
-            
-            Error Details:
-            ===============
-            The automation failed during execution. Please check the GitHub Actions workflow logs for detailed error information.
-            
-            Workflow Details:
-            =================
-            Run ID: ${{ github.run_id }}
-            Repository: ${{ github.repository }}
-            
-            Action Required:
-            ================
-            Review the workflow logs and manually create the user if necessary.
+
+            Please check GitHub Actions logs for error details.
