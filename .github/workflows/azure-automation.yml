@@ -168,43 +168,7 @@ jobs:
             Write-Host "User must change password on first login." -ForegroundColor Yellow
           azPSVersion: "latest"
       
-      - name: Send Success Email Notification
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.office365.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "[SUCCESS] New User Setup Completed - ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}"
-          to: JMarin@vistamsp.com
-          from: ${{ secrets.EMAIL_USERNAME }}
-          body: |
-            New User Setup Automation - Successful Execution
-            
-            User Details:
-            ============
-            Name: ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}
-            Email: ${{ github.event.inputs.email }}
-            Job Title: ${{ github.event.inputs.jobTitle }}
-            Phone: ${{ github.event.inputs.phoneNumber }}
-            
-            Actions Completed:
-            ==================
-            ✓ Azure AD user account created
-            ✓ User properties configured (Job Title, Phone)
-            ✓ Added to TEST GROUP security group
-            ✓ MFA enforcement enabled (Number Matching)
-            ✓ Temporary password set - user must change on first login
-            
-            Workflow Details:
-            =================
-            Run ID: ${{ github.run_id }}
-            Triggered by: GitHub Actions Automation
-            
-            The user will be required to change their password on first login and set up MFA using Microsoft Authenticator with number matching.
-      
-      - name: Send Failure Email Notification
+ - name: Send Failure Email Notification
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
@@ -214,7 +178,7 @@ jobs:
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "[FAILED] New User Setup Error - ${{ github.event.inputs.firstName }} ${{ github.event.inputs.lastName }}"
           to: JMarin@vistamsp.com
-          from: ${{ secrets.EMAIL_USERNAME }}
+          from: "Azure Automation <${{ secrets.EMAIL_USERNAME }}>"
           body: |
             New User Setup Automation - FAILED
             
