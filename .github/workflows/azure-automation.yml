@@ -168,7 +168,7 @@ jobs:
             Write-Host "User must change password on first login." -ForegroundColor Yellow
           azPSVersion: "latest"
       
- - name: Send Failure Email Notification
+- name: Send Failure Email Notification
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
